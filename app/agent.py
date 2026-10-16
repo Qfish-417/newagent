@@ -8,7 +8,7 @@ from .tools import Tools, SCHEMAS
 async def run_agent(run_id, preference):
     try:
         if not settings.openai_api_key:
-            raise ValueError("OPENAI_API_KEY is missing")
+            raise ValueError("DEEPSEEK_API_KEY / OPENAI_API_KEY is missing")
         with connect() as conn:
             conn.execute("UPDATE runs SET status='running' WHERE id=?", (run_id,))
         tools = Tools(settings.data_dir / "runs" / run_id)

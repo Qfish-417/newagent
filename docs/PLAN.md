@@ -34,3 +34,9 @@
 - 真实模型与搜索尚未调用；需要用户在本地配置密钥。
 - 测试依赖存在一条 Starlette/httpx 弃用提示，不影响当前测试。
 - requirements.lock.txt 保存本次 Windows / Python 3.13 验证环境依赖版本。
+
+## 配置调整：DeepSeek
+- 已接入本地 DEEPSEEK_API_KEY，默认 deepseek-chat，兼容原 OpenAI 环境变量。
+- 本地 .env 仅保存非敏感地址与模型名，密钥继续读取现有环境。
+- 配置读取已验证；未发送付费模型请求。新闻搜索密钥尚未配置。
+- 自动测试更新为 4 项，包含 DeepSeek 环境变量优先级验证。

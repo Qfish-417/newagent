@@ -65,3 +65,15 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch):
         assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news", "list_dir"]
     assert len(seen) == 3
     assert seen[1][-1]["role"] == "tool"
+
+
+def test_deepseek_environment_config(monkeypatch):
+    from app.config import Settings
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-deepseek-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-other-key")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-chat")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    config = Settings(_env_file=None)
+    assert config.openai_api_key == "fake-deepseek-key"
+    assert config.model == "deepseek-chat"
+    assert config.openai_base_url == "https://api.deepseek.com"

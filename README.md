@@ -11,7 +11,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
-# 编辑 .env：填写 OPENAI_API_KEY、SEARCH_API_KEY（Tavily），按需调整模型及 BASE_URL
+# 编辑 .env：沿用本地 DEEPSEEK_API_KEY，填写 SEARCH_API_KEY（Tavily）
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -34,3 +34,9 @@ python -m pytest -q
 ```
 
 自动测试不调用付费模型；真实新闻生成需要有效的模型及搜索服务密钥。
+
+## DeepSeek 配置
+
+默认使用 `deepseek-chat` 和 `https://api.deepseek.com`，直接读取本地环境变量 `DEEPSEEK_API_KEY`，无需复制密钥。
+可通过 `DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 覆盖。兼容 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL`，DeepSeek 变量优先。
+`.env` 不提交 Git。新闻检索仍需单独配置 `SEARCH_API_KEY`（Tavily）。

@@ -1,0 +1,14 @@
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS subscriptions (
+ id INTEGER PRIMARY KEY CHECK(id=1), nickname TEXT NOT NULL,
+ topics TEXT NOT NULL, keywords TEXT NOT NULL, exclusions TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS runs (
+ id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL,
+ error TEXT, brief TEXT
+);
+CREATE TABLE IF NOT EXISTS tool_calls (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ run_id TEXT NOT NULL REFERENCES runs(id), name TEXT NOT NULL,
+ arguments TEXT NOT NULL, result TEXT NOT NULL
+);

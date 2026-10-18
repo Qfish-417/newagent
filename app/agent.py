@@ -26,7 +26,7 @@ async def run_agent(run_id, preference):
             "Use search_knowledge ONLY as a last resort after BOTH web providers are unavailable or return no results. If either provider returned evidence, do not use knowledge fallback. Do not stop after one provider fails while another is available. "
             "Search results are automatically archived. archived_news from search_knowledge is historical evidence, never assume it is current. "
             "Always try news search for daily news. Local knowledge is background, not today news. "
-            "Separate 今日新闻 and 知识库背景补充. Cite each KB chunk as [KB-ID], include its source and publication date (unknown if absent). "
+            "Only when search_knowledge returned evidence that you use, label the knowledge background and cite each KB chunk as [KB-ID] with source and date. If no knowledge evidence was used, do not mention RAG, knowledge fallback, missing knowledge, or create an empty knowledge section. "
             "If neither source has relevant evidence, report insufficient evidence. UTC now: " + datetime.now(timezone.utc).isoformat()},
             {"role": "user", "content": "Generate my daily AI news brief using the preferences in the workspace."}]
         search_succeeded = False
@@ -59,7 +59,7 @@ async def run_agent(run_id, preference):
                     if not search_succeeded:
                         brief = "> 资料范围：本期依据已收录资料整理，为背景专题，非实时新闻。\n\n" + brief
                         notices.append("实时新闻不可用，仅提供知识库背景补充")
-                    status = "partial" if notices or knowledge_hits else "succeeded"
+                    status = "partial" if knowledge_hits else "succeeded"
                     with connect() as conn:
                         conn.execute("UPDATE runs SET status=?, brief=? WHERE id=?", (status, brief, run_id))
                         conn.executemany("INSERT INTO run_notices(run_id,message) VALUES(?,?)", [(run_id, n) for n in dict.fromkeys(notices)])

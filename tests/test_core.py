@@ -74,7 +74,10 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
     asyncio.run(agent.run_agent("demo", {"topics":"AI"}))
     with connect() as conn:
         row = conn.execute("SELECT status,brief FROM runs WHERE id='demo'").fetchone()
-        assert row[0] == {"news":"succeeded", "rag":"partial", "empty":"failed", "deepseek":"partial"}[mode]
+        assert row[0] == {"news":"succeeded", "rag":"partial", "empty":"failed", "deepseek":"succeeded"}[mode]
+        if mode in {"news","deepseek"}:
+            assert "知识库" not in row[1]
+            assert "非实时新闻" not in row[1]
         if mode == "rag":
             assert "KB-" in row[1] and "my-notes.md" in row[1] and "2026-01-01" in row[1]
             assert "非实时新闻" in row[1]

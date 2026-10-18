@@ -52,7 +52,7 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
     class FakeClient:
         def __init__(self, **kwargs):
             self.chat = SimpleNamespace(completions=self)
-            self.responses = iter([Message("search_news"), Message("list_dir" if mode == "news" else "search_deepseek" if mode == "deepseek" else "search_knowledge"), Message()])
+            self.responses = iter([Message("search_news")] + ([Message("search_knowledge")] if mode == "rag" else []) + ([Message("search_deepseek")] if mode in {"rag","empty"} else []) + [Message("list_dir" if mode == "news" else "search_deepseek" if mode == "deepseek" else "search_knowledge"), Message()])
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
         async def create(self, **kwargs):
@@ -66,6 +66,7 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
             if mode != "news": raise ValueError("Search unavailable")
             return [{"url":"https://example.com/news", "title":"AI", "content":"AI agents use retrieval.", "published_date":"2026-10-18"}]
         if name == "search_deepseek":
+            if mode in {"rag","empty"}: raise ValueError("DeepSeek search unavailable")
             return [{"url":"https://example.com/deepseek", "title":"AI", "content":"Agent web search evidence", "published_date":"2026-10-18"}]
         return await original(self, name, args)
     monkeypatch.setattr(agent, "AsyncOpenAI", FakeClient)
@@ -77,14 +78,18 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
         if mode == "rag":
             assert "KB-" in row[1] and "my-notes.md" in row[1] and "2026-01-01" in row[1]
             assert "非实时新闻" in row[1]
-        assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news", "list_dir" if mode == "news" else "search_deepseek" if mode == "deepseek" else "search_knowledge"]
+        assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news"] + (["search_knowledge"] if mode == "rag" else []) + (["search_deepseek"] if mode in {"rag","empty"} else []) + ["list_dir" if mode == "news" else "search_deepseek" if mode == "deepseek" else "search_knowledge"]
     if mode != "news":
         assert "search_news" not in enabled[1]
         assert "search_deepseek" in enabled[1]
     if mode == "deepseek":
         with connect() as conn:
             assert conn.execute("SELECT COUNT(*) FROM news_archive").fetchone()[0] == 1
-    assert len(seen) == 3
+    assert len(seen) == (5 if mode == "rag" else 4 if mode == "empty" else 3)
+    if mode == "rag":
+        with connect() as conn:
+            early = conn.execute("SELECT result FROM tool_calls WHERE name='search_knowledge' ORDER BY id LIMIT 1").fetchone()[0]
+            assert "RAG fallback is locked" in early
     assert seen[1][-1]["role"] == "tool"
 
 

@@ -89,21 +89,19 @@ def test_deepseek_environment_config(monkeypatch):
     assert config.openai_base_url == "https://api.deepseek.com"
 
 
-def test_knowledge_api_retrieval_and_migration(tmp_path, monkeypatch):
+def test_knowledge_internal_retrieval_and_public_routes_removed(tmp_path, monkeypatch):
     from app.db import initialize
+    from app.knowledge import add_document, retrieve
     monkeypatch.setattr(settings, "data_dir", tmp_path)
     with TestClient(app) as client:
-        initialize()  # Migrations are repeatable, existing data is preserved.
-        response = client.post("/api/knowledge", json={"title":"检索增强生成", "source":"个人笔记.md", "content":"检索增强生成通过知识库为大模型提供背景资料。"})
-        assert response.status_code == 201
-        matches = client.get("/api/knowledge/search", params={"q":"知识库"}).json()
-        assert matches and matches[0]["source"] == "个人笔记.md"
-        assert matches[0]["published_at"] is None
-        assert matches[0]["kind"] == "background_knowledge"
-        assert client.get("/api/knowledge/search", params={"q":"unrelatedxyz"}).json() == []
-        assert client.get("/api/knowledge/search", params={"q":""}).json() == []
-        assert client.post("/api/knowledge", json={"title":"x", "source":"y", "content":" "}).status_code == 422
-        assert len(client.get("/api/knowledge").json()) == 1
+        add_document("检索增强生成", "知识库为大模型提供背景资料", "notes", None)
+        initialize()
+        assert retrieve("知识库")
+        assert retrieve("unrelatedxyz") == []
+        for route in ["/api/knowledge", "/api/knowledge/search", "/api/knowledge/1"]:
+            assert client.get(route).status_code == 404
+        assert client.post("/api/knowledge", json={}).status_code == 404
+        assert 'id="knowledge"' not in client.get("/").text
 
 
 def test_search_archive_deduplicates_and_is_retrievable(tmp_path, monkeypatch):
@@ -128,12 +126,14 @@ def test_search_archive_deduplicates_and_is_retrievable(tmp_path, monkeypatch):
         assert conn.execute("SELECT COUNT(*) FROM knowledge_documents").fetchone()[0] == 1
 
 
-def test_knowledge_detail_restores_overlapping_chunks(tmp_path, monkeypatch):
+def test_knowledge_operator_detail(tmp_path, monkeypatch):
+    from app.db import initialize
+    from app.knowledge import add_document
+    from scripts.manage_knowledge import show_document
     monkeypatch.setattr(settings, "data_dir", tmp_path)
+    initialize()
     content = "知识库资料详情" * 300
-    with TestClient(app) as client:
-        result = client.post("/api/knowledge", json={"title":"长文", "source":"notes", "content":content})
-        detail = client.get("/api/knowledge/" + str(result.json()["id"]))
-        assert detail.status_code == 200
-        assert detail.json()["content"] == content
-        assert client.get("/api/knowledge/99999").status_code == 404
+    doc_id = add_document("长文", content, "notes", None)
+    assert show_document(doc_id)["content"] == content
+    with pytest.raises(ValueError):
+        show_document(99999)

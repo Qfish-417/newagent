@@ -6,8 +6,6 @@ from pathlib import Path
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from datetime import date
-from .knowledge import add_document, retrieve
 from .db import initialize, connect
 from .agent import run_agent
 
@@ -66,45 +64,5 @@ def get_run(run_id: str):
             raise HTTPException(404, "Run not found")
         result = dict(row)
         result["notices"] = [r[0] for r in conn.execute("SELECT message FROM run_notices WHERE run_id=?", (run_id,))]
-        result["tool_calls"] = [dict(item) for item in conn.execute("SELECT name,arguments,result FROM tool_calls WHERE run_id=? ORDER BY id", (run_id,))]
+        result["tool_calls"] = [dict(item) for item in conn.execute("SELECT name FROM tool_calls WHERE run_id=? ORDER BY id", (run_id,))]
     return result
-
-
-class KnowledgeDocument(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    content: str = Field(min_length=1, max_length=50000)
-    source: str = Field(min_length=1, max_length=500)
-    published_at: date | None = None
-
-@app.post("/api/knowledge", status_code=201)
-def import_knowledge(body: KnowledgeDocument):
-    if not body.content.strip() or not body.title.strip() or not body.source.strip():
-        raise HTTPException(422, "Title, content and source cannot be blank")
-    try:
-        doc_id = add_document(body.title, body.content, body.source, body.published_at.isoformat() if body.published_at else None)
-    except ValueError as error:
-        raise HTTPException(409, str(error))
-    return {"id": doc_id}
-
-@app.get("/api/knowledge")
-def list_knowledge():
-    with connect() as conn:
-        return [dict(row) for row in conn.execute("SELECT d.*, CASE WHEN a.document_id IS NULL THEN 'manual' ELSE 'archived_news' END AS kind, a.first_seen_at,a.last_seen_at FROM knowledge_documents d LEFT JOIN news_archive a ON a.document_id=d.id ORDER BY d.id DESC")]
-
-@app.get("/api/knowledge/search")
-def search_knowledge(q: str = ""):
-    if len(q) > 500:
-        raise HTTPException(422, "Query too long")
-    return retrieve(q)
-
-
-@app.get("/api/knowledge/{document_id}")
-def get_knowledge(document_id: int):
-    with connect() as conn:
-        row = conn.execute("SELECT * FROM knowledge_documents WHERE id=?", (document_id,)).fetchone()
-        if not row:
-            raise HTTPException(404, "Document not found")
-        chunks = conn.execute("SELECT content FROM knowledge_chunks WHERE document_id=? ORDER BY position", (document_id,)).fetchall()
-    # Chunks overlap by 150 characters: restore original content without repetition.
-    content = "" if not chunks else chunks[0][0] + "".join(c[0][150:] for c in chunks[1:])
-    return {**dict(row), "content": content}

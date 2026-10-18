@@ -43,7 +43,7 @@ python -m pytest -q
 
 ## V0.2 本地 RAG 降级
 
-页面“本地 RAG 知识库”可以导入你自己的文本、标题、来源和可选发布日期。
+知识库仅通过本机后台命令管理，不在用户页面展示或导入。
 模型可调用 `search_knowledge(query)` 检索相关片段，在新闻来源失败或背景不足时补充资料。
 检索采用中文双字与英文词项加权匹配，不依赖额外 embedding API；同义词召回能力有限。
 资料分块保存在 SQLite（`data/news.db`），无需额外服务。
@@ -58,9 +58,23 @@ python -m pytest -q
 - search_news 成功返回的标题、正文摘要、来源 URL、服务提供的发布时间自动入 RAG；保存首次和最近检索时间。
 - URL 去除 fragment、utm_*、fbclid、gclid，唯一约束及事务避免重复归档；重复命中更新最近检索时间，保留原始资料。
 - 不保存模型生成的摘要作为新闻证据；缺少正文/有效来源的结果跳过，发布时间缺失保留未知。
-- 知识库页面区分手动导入和搜索归档；RAG 返回 archived_news 类型及检索日期，始终作为历史背景使用。
+- 后台记录区分手动导入和搜索归档；RAG 返回 archived_news 类型及检索日期，始终作为历史背景使用。
 - 归档失败不会抹掉可用搜索结果；跳过或失败会写入降级说明。仍受 200 文档上限约束，达到上限不自动删除旧资料。
 - 8 项自动测试通过，包含重复链接、日期保留、历史资料召回、无效资料跳过。未进行真实搜索 API 调用。
 
 ## 官方新闻示例资料
 运行 python -m scripts.seed_knowledge 导入 examples/knowledge_seed.json 中的三篇官方公告摘要（DeepSeek V3.2、Claude 4、MCP）。重复运行跳过已存在的同标题同来源资料。保留原始发布日期，仅用于历史背景检索，并非今日新闻。
+
+## 后台知识库管理
+
+用户页面不提供知识库列表、正文浏览及导入入口，原 `/api/knowledge` 路由已移除。
+任务详情只显示工具名称，原始检索资料仍保留在本地数据库用于后台排查。
+
+```powershell
+python -m scripts.manage_knowledge list
+python -m scripts.manage_knowledge import examples/knowledge_seed.json
+python -m scripts.manage_knowledge show 1
+python -m scripts.manage_knowledge search Agent
+```
+
+导入文件为 JSON 数组，字段参考 examples/knowledge_seed.json。已有知识库与自动搜索归档继续工作，简报保留来源引用。

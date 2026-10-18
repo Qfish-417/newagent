@@ -44,9 +44,13 @@ def test_due_claim_is_unique_and_notification_persists(tmp_path,monkeypatch):
     with connect() as conn:
         conn.execute("INSERT INTO users VALUES('a','now')")
         conn.execute("INSERT INTO user_subscriptions VALUES('a','A','AI','','','09:00','Asia/Shanghai',1,'2026-10-17T01:00:00+00:00')")
+    with connect() as conn:
+        conn.execute("INSERT INTO user_prompts VALUES('a','重点分析开源Agent')")
     now = datetime(2026,10,18,2,tzinfo=timezone.utc)
     due = claim_due(now)
     assert len(due) == 1
+    assert due[0][1]["custom_prompt"] == "重点分析开源Agent"
+    assert "user_id" not in due[0][1]
     assert claim_due(now) == []
     initialize()
     assert claim_due(now) == []

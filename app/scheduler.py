@@ -30,7 +30,7 @@ def claim_due(now=None):
     claimed = []
     with connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        rows = conn.execute("SELECT * FROM user_subscriptions WHERE enabled=1 AND next_run_at<=?", (now.isoformat(),)).fetchall()
+        rows = conn.execute("SELECT s.*,COALESCE(p.custom_prompt,'') AS custom_prompt FROM user_subscriptions s LEFT JOIN user_prompts p ON p.user_id=s.user_id WHERE s.enabled=1 AND s.next_run_at<=?", (now.isoformat(),)).fetchall()
         for row in rows:
             run_id = uuid.uuid4().hex
             existing = conn.execute("SELECT 1 FROM run_owners WHERE user_id=? AND scheduled_for=?", (row['user_id'],row['next_run_at'])).fetchone()

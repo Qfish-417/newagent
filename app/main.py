@@ -9,6 +9,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 from .db import initialize, connect
+from .auth import router as auth_router, current_account
 from .scheduler import Scheduler, next_occurrence, generate_and_notify
 
 @asynccontextmanager
@@ -27,12 +28,15 @@ async def lifespan(app):
         await app.state.scheduler.close()
 
 app = FastAPI(title="newagent", lifespan=lifespan)
+app.include_router(auth_router)
 
 @app.middleware("http")
 async def identity(request: Request, call_next):
-    token = request.cookies.get("newagent_user", "")
+    account = current_account(request.cookies.get("newagent_session", ""))
+    request.state.account = account
+    token = account["user_id"] if account else request.cookies.get("newagent_user", "")
     with connect() as conn:
-        row = conn.execute("SELECT id FROM users WHERE id=?", (token,)).fetchone() if token else None
+        row = conn.execute("SELECT id FROM users WHERE id=? AND (? OR NOT EXISTS(SELECT 1 FROM accounts WHERE user_id=users.id))", (token,bool(account))).fetchone() if token else None
         fresh = not row
         if fresh:
             token = secrets.token_urlsafe(32)
@@ -48,7 +52,7 @@ async def identity(request: Request, call_next):
                 conn.execute("INSERT OR IGNORE INTO run_owners(run_id,user_id) SELECT id,? FROM runs", (token,))
     request.state.user_id = token
     response = await call_next(request)
-    if fresh:
+    if fresh and not getattr(request.state,"auth_changed",False):
         response.set_cookie("newagent_user",token,httponly=True,samesite="strict",max_age=31536000,secure=request.url.scheme=="https")
     return response
 
@@ -60,6 +64,7 @@ class Subscription(BaseModel):
     scheduled_time: str = Field(default="09:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     timezone: str = "Asia/Shanghai"
     enabled: bool = False
+    custom_prompt: str = Field(default="", max_length=3000)
 
     @field_validator("timezone")
     @classmethod
@@ -77,7 +82,7 @@ def index():
 @app.get("/api/subscription")
 def get_subscription(request: Request):
     with connect() as conn:
-        row = conn.execute("SELECT * FROM user_subscriptions WHERE user_id=?", (request.state.user_id,)).fetchone()
+        row = conn.execute("SELECT s.*,COALESCE(p.custom_prompt,'') AS custom_prompt FROM user_subscriptions s LEFT JOIN user_prompts p ON p.user_id=s.user_id WHERE s.user_id=?", (request.state.user_id,)).fetchone()
     if not row:
         return None
     return {k:v for k,v in dict(row).items() if k!='user_id'}
@@ -88,6 +93,7 @@ async def save_subscription(body: Subscription, request: Request):
     with connect() as conn:
         conn.execute("INSERT INTO user_subscriptions VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET nickname=excluded.nickname,topics=excluded.topics,keywords=excluded.keywords,exclusions=excluded.exclusions,scheduled_time=excluded.scheduled_time,timezone=excluded.timezone,enabled=excluded.enabled,next_run_at=excluded.next_run_at",
             (request.state.user_id,body.nickname,body.topics,body.keywords,body.exclusions,body.scheduled_time,body.timezone,int(body.enabled),due))
+        conn.execute("INSERT OR REPLACE INTO user_prompts VALUES(?,?)", (request.state.user_id,body.custom_prompt))
     request.app.state.scheduler.wake.set()
     return {"ok":True,"next_run_at":due,"server_time":datetime.now(timezone.utc).isoformat()}
 

@@ -58,7 +58,7 @@ try {
         if (-not $savedKey) { $savedKey = [Environment]::GetEnvironmentVariable('DEEPSEEK_API_KEY', 'Machine') }
         if ($savedKey) { $env:DEEPSEEK_API_KEY = $savedKey }
     }
-    & $pythonPath -c "from app.config import settings; from app.db import initialize; assert settings.openai_api_key, 'Set DEEPSEEK_API_KEY in your environment or local .env'; initialize(); print('Configuration and database ready. API key is configured (not displayed).')"
+    & $pythonPath -c "from app.config import settings; from app.db import initialize; from app.shell import bash_path; bash_path(); assert settings.openai_api_key, 'Set DEEPSEEK_API_KEY in your environment or local .env'; initialize(); print('Configuration and database ready. API key is configured (not displayed).')"
     if ($LASTEXITCODE -ne 0) { throw 'Configuration check failed. Use KEY=value syntax in a UTF-8 .env file. Do not use export or $env: syntax inside .env.' }
     if ($CheckOnly) { Write-Host 'Startup check passed.'; exit 0 }
     Write-Host "Open http://127.0.0.1:$Port - press Ctrl+C to stop. Keep this window running for daily schedules."

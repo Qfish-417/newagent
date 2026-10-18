@@ -179,3 +179,18 @@ def test_deepseek_search_tool_normalizes_results(tmp_path, monkeypatch):
     assert result[0]["published_date"] == "2026-10-18"
     assert requests[0][0] == "https://api.deepseek.com/v1/tools/search"
     assert "after:" in requests[0][1]["json"]["query"]
+
+
+def test_real_bash_execution_and_boundaries(tmp_path, monkeypatch):
+    from app.shell import bash_path
+    assert bash_path()
+    tools = Tools(tmp_path/"task space")
+    (tools.root/"中文 note.txt").write_text("AI news\nsecond line\n",encoding="utf-8")
+    result = asyncio.run(tools.execute("bash",{"command":'cat "中文 note.txt"'}))
+    assert result["shell"] == "bash" and result["exit_code"] == 0
+    assert result["stdout"].splitlines() == ["AI news", "second line"]
+    assert "2" in asyncio.run(tools.execute("bash",{"command":'wc "中文 note.txt"'}))["stdout"]
+    assert "中文 note.txt" in asyncio.run(tools.execute("bash",{"command":"ls"}))["stdout"]
+    for command in ['cat ../secret', 'pwd; whoami', 'ls . | cat', 'cat .env', 'pwd > out.txt']:
+        with pytest.raises(ValueError):
+            asyncio.run(tools.execute("bash",{"command":command}))

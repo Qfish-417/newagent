@@ -6,7 +6,7 @@ KUAFUAI Agent 开发实习题，选项 A。Python + FastAPI + SQLite，使用 Op
 
 ## Windows 一键启动
 
-环境：Windows 10/11，Windows PowerShell 5.1 或 PowerShell 7，**64 位 Python 3.11+**（本项目在 Python 3.13 验证），首次安装依赖需要联网。项目路径支持空格与中文。
+环境：Windows 10/11，Windows PowerShell 5.1 或 PowerShell 7，**64 位 Python 3.11+**（本项目在 Python 3.13 验证），首次安装依赖需要联网。真实 shell 工具还需安装 Git for Windows（自带 Git Bash）。项目路径支持空格与中文。
 
 **只需要 DeepSeek API Key**，模型对话和官方搜索共用本机环境变量 `DEEPSEEK_API_KEY`。不需要 Tavily、Redis、MySQL 或 Docker。
 
@@ -99,7 +99,7 @@ SQLite 自动创建，SQL 在 migrations/001_initial.sql 至 005_accounts.sql；
 ## 工具与降级
 
 - list_dir、read_file、search_content、write_file：限任务工作目录。
-- bash：目前是受限命令解释器，仅支持 pwd/ls/cat/wc，**尚未实现通用 shell 执行**。
+- bash：真实调用 Bash 子进程执行 pwd/ls/cat/wc，仅允许任务目录内的参数，禁止管道、重定向和命令拼接，5秒超时；不向子进程传递 API 密钥。
 - search_news：可选 Tavily 新闻搜索。
 - search_deepseek：DeepSeek 官方联网搜索，复用现有密钥。
 - search_knowledge：本地分块词项检索（中文双字/英文词项加权），不依赖 embedding 服务。

@@ -1,0 +1,20 @@
+[
+  {
+    "title": "DeepSeek V3.2 发布：推理与工具调用结合",
+    "source": "https://deepseek.com/news/deepseek-v3-2/",
+    "published_at": "2025-12-01",
+    "content": "【官方公告摘要；历史资料】2025年12月1日，DeepSeek 发布 V3.2 与 V3.2-Speciale。公告将标准版本定位于日常问答和通用 Agent 任务，并强调标准版本在思考与非思考模式下都支持工具调用。Speciale 是面向复杂推理的增强版本，公告明确其当时不支持工具调用。开发 Agent 时应区分模型的推理能力与工具接口能力，不能仅凭模型名称假设功能一致。以上为发布当时信息，不代表当前接口状态。"
+  },
+  {
+    "title": "Claude 4 发布与 Claude Code 正式可用",
+    "source": "https://www.anthropic.com/news/claude-4",
+    "published_at": "2025-05-22",
+    "content": "【官方公告摘要；历史资料】2025年5月22日，Anthropic 发布 Claude Opus 4 和 Claude Sonnet 4，重点介绍编码、推理和 Agent 任务能力。两款模型支持在扩展思考过程中使用工具，公告同时介绍并行工具使用和本地文件辅助记忆能力。Claude Code 同日宣布正式可用，并介绍编辑器集成、SDK 和 GitHub 工作流。对 AI 软件工程项目而言，这些能力让多步骤代码修改与工具执行成为值得验证的应用场景；厂商能力说明仍需在自己的工程任务上评估。"
+  },
+  {
+    "title": "MCP 开源：统一 AI 助手与数据工具的连接",
+    "source": "https://www.anthropic.com/news/model-context-protocol",
+    "published_at": "2024-11-25",
+    "content": "【官方公告摘要；历史资料】2024年11月25日，Anthropic 开源 Model Context Protocol（MCP）。协议面向 AI 应用与数据源、业务工具、开发环境之间的连接，提供客户端与服务端架构。首批发布内容包括协议规范与 SDK、Claude Desktop 本地服务支持和开源服务仓库。其目标是减少每个数据源都需要独立适配的集成成本。对于新闻助手，MCP 可作为接入资料库或搜索工具的一种接口方式，但协议本身不会自动保证数据准确性或解决模型生成错误。"
+  }
+]

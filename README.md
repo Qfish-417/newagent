@@ -1,6 +1,6 @@
 # newagent · 每日 AI 新闻助手
 
-KUAFUAI Agent 开发实习题，选项 A。当前为 **V0.1 本地单用户原型**。
+KUAFUAI Agent 开发实习题，选项 A。当前为 **V0.2 本地单用户原型**。
 
 模型通过 function calling 自主选择工具、追加检索并决定停止，页面可查看偏好、历史任务及工具调用记录。当前支持手动生成；定时任务、邮件推送、多用户和结构化来源校验尚未实现，详见 [实施方案](docs/PLAN.md)。
 
@@ -40,3 +40,16 @@ python -m pytest -q
 默认使用 `deepseek-chat` 和 `https://api.deepseek.com`，直接读取本地环境变量 `DEEPSEEK_API_KEY`，无需复制密钥。
 可通过 `DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 覆盖。兼容 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL`，DeepSeek 变量优先。
 `.env` 不提交 Git。新闻检索仍需单独配置 `SEARCH_API_KEY`（Tavily）。
+
+## V0.2 本地 RAG 降级
+
+页面“本地 RAG 知识库”可以导入你自己的文本、标题、来源和可选发布日期。
+模型可调用 `search_knowledge(query)` 检索相关片段，在新闻来源失败或背景不足时补充资料。
+检索采用中文双字与英文词项加权匹配，不依赖额外 embedding API；同义词召回能力有限。
+资料分块保存在 SQLite（`data/news.db`），无需额外服务。
+
+使用知识库或检索过程出现降级时，任务标记 `partial`。程序附加知识库引用及日期；只有知识库命中时明确提示“非今日新闻”。两种来源均无证据则失败。
+当前只检查检索是否有命中，尚未完整验证模型每条陈述与引用的一致性，不能保证新闻真实性。
+
+资料只供本地单用户使用。被检索命中的片段会发给所配置的 DeepSeek 服务用于生成内容，请只导入适合发送给该服务的资料。
+新闻搜索仍可选配 Tavily；没有搜索密钥时，Agent 可以尝试知识库降级，不会自动创建虚假新闻或示例资料。

@@ -28,7 +28,8 @@ def test_api_and_missing_key_failure(tmp_path, monkeypatch):
         assert client.get("/api/runs/missing").status_code == 404
 
 
-def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["news", "rag", "empty"])
+def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
     from types import SimpleNamespace
     import app.agent as agent
     from app.db import initialize, connect
@@ -37,17 +38,20 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch):
     initialize()
     with connect() as conn:
         conn.execute("INSERT INTO runs(id,status,created_at) VALUES('demo','queued','now')")
+    if mode == "rag":
+        from app.knowledge import add_document
+        add_document("AI Agent", "AI agents use tools and retrieval.", "my-notes.md", "2026-01-01")
     seen = []
     class Message:
         def __init__(self, name=None):
             self.content = None if name else "测试简报 https://example.com/news"
-            self.tool_calls = [SimpleNamespace(id=name, function=SimpleNamespace(name=name, arguments='{"query":"AI"}' if name == "search_news" else '{"path":"."}'))] if name else None
+            self.tool_calls = [SimpleNamespace(id=name, function=SimpleNamespace(name=name, arguments='{"query":"AI"}' if name in {"search_news", "search_knowledge"} else '{"path":"."}'))] if name else None
         def model_dump(self, **kwargs):
             return {"role": "assistant", "content": self.content}
     class FakeClient:
         def __init__(self, **kwargs):
             self.chat = SimpleNamespace(completions=self)
-            self.responses = iter([Message("search_news"), Message("list_dir"), Message()])
+            self.responses = iter([Message("search_news"), Message("list_dir" if mode == "news" else "search_knowledge"), Message()])
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
         async def create(self, **kwargs):
@@ -55,14 +59,20 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch):
             return SimpleNamespace(choices=[SimpleNamespace(message=next(self.responses))])
     original = Tools.execute
     async def execute(self, name, args):
-        if name == "search_news": return [{"url":"https://example.com/news", "title":"AI"}]
+        if name == "search_news":
+            if mode != "news": raise ValueError("Search unavailable")
+            return [{"url":"https://example.com/news", "title":"AI"}]
         return await original(self, name, args)
     monkeypatch.setattr(agent, "AsyncOpenAI", FakeClient)
     monkeypatch.setattr(Tools, "execute", execute)
     asyncio.run(agent.run_agent("demo", {"topics":"AI"}))
     with connect() as conn:
-        assert conn.execute("SELECT status FROM runs WHERE id='demo'").fetchone()[0] == "succeeded"
-        assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news", "list_dir"]
+        row = conn.execute("SELECT status,brief FROM runs WHERE id='demo'").fetchone()
+        assert row[0] == {"news":"succeeded", "rag":"partial", "empty":"failed"}[mode]
+        if mode == "rag":
+            assert "KB-" in row[1] and "my-notes.md" in row[1] and "2026-01-01" in row[1]
+            assert "未获取到实时新闻" in row[1]
+        assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news", "list_dir" if mode == "news" else "search_knowledge"]
     assert len(seen) == 3
     assert seen[1][-1]["role"] == "tool"
 
@@ -77,3 +87,20 @@ def test_deepseek_environment_config(monkeypatch):
     assert config.openai_api_key == "fake-deepseek-key"
     assert config.model == "deepseek-chat"
     assert config.openai_base_url == "https://api.deepseek.com"
+
+
+def test_knowledge_api_retrieval_and_migration(tmp_path, monkeypatch):
+    from app.db import initialize
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    with TestClient(app) as client:
+        initialize()  # Migrations are repeatable, existing data is preserved.
+        response = client.post("/api/knowledge", json={"title":"检索增强生成", "source":"个人笔记.md", "content":"检索增强生成通过知识库为大模型提供背景资料。"})
+        assert response.status_code == 201
+        matches = client.get("/api/knowledge/search", params={"q":"知识库"}).json()
+        assert matches and matches[0]["source"] == "个人笔记.md"
+        assert matches[0]["published_at"] is None
+        assert matches[0]["kind"] == "background_knowledge"
+        assert client.get("/api/knowledge/search", params={"q":"unrelatedxyz"}).json() == []
+        assert client.get("/api/knowledge/search", params={"q":""}).json() == []
+        assert client.post("/api/knowledge", json={"title":"x", "source":"y", "content":" "}).status_code == 422
+        assert len(client.get("/api/knowledge").json()) == 1

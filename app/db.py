@@ -13,4 +13,5 @@ def connect():
 
 def initialize():
     with connect() as conn:
-        conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+        for migration in sorted(SCHEMA.parent.glob("*.sql")):
+            conn.executescript(migration.read_text(encoding="utf-8"))

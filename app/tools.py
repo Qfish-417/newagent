@@ -3,6 +3,7 @@ import shlex
 from pathlib import Path
 import httpx
 from .config import settings
+from .knowledge import retrieve
 
 # V1 deliberately limits shell commands to harmless workspace inspection.
 COMMANDS = {"pwd", "ls", "cat", "wc"}
@@ -53,6 +54,8 @@ class Tools:
                 raise ValueError("cat/wc require exactly one file")
             content = await self.execute("read_file", {"path": parts[1]})
             return content if parts[0] == "cat" else {"characters": len(content), "lines": len(content.splitlines())}
+        if name == "search_knowledge":
+            return retrieve(args["query"])
         if name == "search_news":
             if not settings.search_api_key:
                 raise ValueError("SEARCH_API_KEY is missing; configure Tavily")
@@ -71,6 +74,7 @@ def schema(name, description, properties):
                        "required": properties, "additionalProperties": False}}}
 
 SCHEMAS = [
+    schema("search_knowledge", "Retrieve relevant local knowledge chunks. Background only, not fresh news. Cite returned KB identifiers and dates. Empty means no evidence.", ["query"]),
     schema("list_dir", "List task workspace directory", ["path"]),
     schema("read_file", "Read UTF-8 task file", ["path"]),
     schema("search_content", "Find files containing keyword", ["keyword", "dir"]),

@@ -6,6 +6,8 @@ from pathlib import Path
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from datetime import date
+from .knowledge import add_document, retrieve
 from .db import initialize, connect
 from .agent import run_agent
 
@@ -63,5 +65,34 @@ def get_run(run_id: str):
         if not row:
             raise HTTPException(404, "Run not found")
         result = dict(row)
+        result["notices"] = [r[0] for r in conn.execute("SELECT message FROM run_notices WHERE run_id=?", (run_id,))]
         result["tool_calls"] = [dict(item) for item in conn.execute("SELECT name,arguments,result FROM tool_calls WHERE run_id=? ORDER BY id", (run_id,))]
     return result
+
+
+class KnowledgeDocument(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=50000)
+    source: str = Field(min_length=1, max_length=500)
+    published_at: date | None = None
+
+@app.post("/api/knowledge", status_code=201)
+def import_knowledge(body: KnowledgeDocument):
+    if not body.content.strip() or not body.title.strip() or not body.source.strip():
+        raise HTTPException(422, "Title, content and source cannot be blank")
+    try:
+        doc_id = add_document(body.title, body.content, body.source, body.published_at.isoformat() if body.published_at else None)
+    except ValueError as error:
+        raise HTTPException(409, str(error))
+    return {"id": doc_id}
+
+@app.get("/api/knowledge")
+def list_knowledge():
+    with connect() as conn:
+        return [dict(row) for row in conn.execute("SELECT * FROM knowledge_documents ORDER BY id DESC")]
+
+@app.get("/api/knowledge/search")
+def search_knowledge(q: str = ""):
+    if len(q) > 500:
+        raise HTTPException(422, "Query too long")
+    return retrieve(q)

@@ -28,13 +28,14 @@ def test_api_and_missing_key_failure(tmp_path, monkeypatch):
         assert client.get("/api/runs/missing").status_code == 404
 
 
-@pytest.mark.parametrize("mode", ["news", "rag", "empty"])
+@pytest.mark.parametrize("mode", ["news", "rag", "empty", "deepseek"])
 def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
     from types import SimpleNamespace
     import app.agent as agent
     from app.db import initialize, connect
     monkeypatch.setattr(settings, "data_dir", tmp_path)
     monkeypatch.setattr(settings, "openai_api_key", "test-only")
+    monkeypatch.setattr(settings, "search_api_key", "test-only")
     initialize()
     with connect() as conn:
         conn.execute("INSERT INTO runs(id,status,created_at) VALUES('demo','queued','now')")
@@ -45,34 +46,44 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
     class Message:
         def __init__(self, name=None):
             self.content = None if name else "测试简报 https://example.com/news"
-            self.tool_calls = [SimpleNamespace(id=name, function=SimpleNamespace(name=name, arguments='{"query":"AI"}' if name in {"search_news", "search_knowledge"} else '{"path":"."}'))] if name else None
+            self.tool_calls = [SimpleNamespace(id=name, function=SimpleNamespace(name=name, arguments='{"query":"AI"}' if name in {"search_news", "search_deepseek", "search_knowledge"} else '{"path":"."}'))] if name else None
         def model_dump(self, **kwargs):
             return {"role": "assistant", "content": self.content}
     class FakeClient:
         def __init__(self, **kwargs):
             self.chat = SimpleNamespace(completions=self)
-            self.responses = iter([Message("search_news"), Message("list_dir" if mode == "news" else "search_knowledge"), Message()])
+            self.responses = iter([Message("search_news"), Message("list_dir" if mode == "news" else "search_deepseek" if mode == "deepseek" else "search_knowledge"), Message()])
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
         async def create(self, **kwargs):
+            enabled.append([tool["function"]["name"] for tool in kwargs["tools"]])
             seen.append(list(kwargs["messages"]))
             return SimpleNamespace(choices=[SimpleNamespace(message=next(self.responses))])
+    enabled = []
     original = Tools.execute
     async def execute(self, name, args):
         if name == "search_news":
             if mode != "news": raise ValueError("Search unavailable")
             return [{"url":"https://example.com/news", "title":"AI", "content":"AI agents use retrieval.", "published_date":"2026-10-18"}]
+        if name == "search_deepseek":
+            return [{"url":"https://example.com/deepseek", "title":"AI", "content":"Agent web search evidence", "published_date":"2026-10-18"}]
         return await original(self, name, args)
     monkeypatch.setattr(agent, "AsyncOpenAI", FakeClient)
     monkeypatch.setattr(Tools, "execute", execute)
     asyncio.run(agent.run_agent("demo", {"topics":"AI"}))
     with connect() as conn:
         row = conn.execute("SELECT status,brief FROM runs WHERE id='demo'").fetchone()
-        assert row[0] == {"news":"succeeded", "rag":"partial", "empty":"failed"}[mode]
+        assert row[0] == {"news":"succeeded", "rag":"partial", "empty":"failed", "deepseek":"partial"}[mode]
         if mode == "rag":
             assert "KB-" in row[1] and "my-notes.md" in row[1] and "2026-01-01" in row[1]
             assert "非实时新闻" in row[1]
-        assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news", "list_dir" if mode == "news" else "search_knowledge"]
+        assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news", "list_dir" if mode == "news" else "search_deepseek" if mode == "deepseek" else "search_knowledge"]
+    if mode != "news":
+        assert "search_news" not in enabled[1]
+        assert "search_deepseek" in enabled[1]
+    if mode == "deepseek":
+        with connect() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM news_archive").fetchone()[0] == 1
     assert len(seen) == 3
     assert seen[1][-1]["role"] == "tool"
 
@@ -137,3 +148,26 @@ def test_knowledge_operator_detail(tmp_path, monkeypatch):
     assert show_document(doc_id)["content"] == content
     with pytest.raises(ValueError):
         show_document(99999)
+
+
+def test_deepseek_search_tool_normalizes_results(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(settings, "openai_api_key", "fake-key")
+    requests = []
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, url, **kwargs):
+            requests.append((url, kwargs))
+            return httpx.Response(200, request=httpx.Request("POST", url), json={"results":[
+                {"title":"AI news", "url":"https://example.com/news", "summary":"Tools and agents", "date":"2026-10-18"},
+                {"title":"Bad", "url":"file:///secret", "content":"no"}]})
+    monkeypatch.setattr(httpx, "AsyncClient", Client)
+    result = asyncio.run(Tools(tmp_path).execute("search_deepseek", {"query":"AI news"}))
+    assert len(result) == 1
+    assert result[0]["content"] == "Tools and agents"
+    assert result[0]["provider"] == "deepseek"
+    assert result[0]["published_date"] == "2026-10-18"
+    assert requests[0][0] == "https://api.deepseek.com/v1/tools/search"
+    assert "after:" in requests[0][1]["json"]["query"]

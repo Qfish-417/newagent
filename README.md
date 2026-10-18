@@ -11,7 +11,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
-# 编辑 .env：沿用本地 DEEPSEEK_API_KEY，填写 SEARCH_API_KEY（Tavily）
+# 编辑 .env：沿用本地 DEEPSEEK_API_KEY，可选填写 SEARCH_API_KEY（Tavily 备用搜索）
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -39,7 +39,7 @@ python -m pytest -q
 
 默认使用 `deepseek-chat` 和 `https://api.deepseek.com`，直接读取本地环境变量 `DEEPSEEK_API_KEY`，无需复制密钥。
 可通过 `DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 覆盖。兼容 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL`，DeepSeek 变量优先。
-`.env` 不提交 Git。新闻检索仍需单独配置 `SEARCH_API_KEY`（Tavily）。
+`.env` 不提交 Git。新闻检索默认可直接使用现有 DeepSeek 密钥；`SEARCH_API_KEY` 仅用于可选 Tavily 搜索。
 
 ## V0.2 本地 RAG 降级
 
@@ -78,3 +78,11 @@ python -m scripts.manage_knowledge search Agent
 ```
 
 导入文件为 JSON 数组，字段参考 examples/knowledge_seed.json。已有知识库与自动搜索归档继续工作，简报保留来源引用。
+
+## 扩充工具与搜索切换
+
+框架为 FastAPI + OpenAI Python SDK，Agent Loop 为手写 function calling，不依赖 LangChain/LangGraph。
+扩充工具时，在 app/tools.py 的 SCHEMAS 添加名称、参数和说明，并在 Tools.execute 实现对应处理；循环自动把工具暴露给模型。
+`search_deepseek(query)` 已注册，使用本机 DEEPSEEK_API_KEY 请求官方 Search API。
+未配置 Tavily 时不向模型提供 search_news；已配置的搜索服务调用异常后在当前任务停用，错误与切换建议回传模型，由模型重新选择其他搜索或知识库工具。空结果允许调整查询，不直接停用。
+两个搜索工具的结果都自动归档 RAG。搜索服务提供的日期可能是索引时间，模型仍需核实新闻日期。

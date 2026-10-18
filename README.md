@@ -129,3 +129,14 @@ SQLite 自动创建，SQL 在 migrations/001_initial.sql 至 005_accounts.sql；
 
 自动测试不调用付费服务。覆盖工具隔离、模型工具循环、双搜索/RAG门槛、新闻归档、账号隔离与迁移、定时与未读。
 Git 保留各阶段提交历史。`.env`、`.env.*`（除示例）、data/、数据库、日志和虚拟环境均被忽略。提交代码与 SQL，不提交 API Key、账号数据、Cookie、任务资料或备份。
+
+## 带 Git 历史的交付代码包
+
+仓库若保持私有，可生成符合题目要求、包含 `.git` 的代码包提交评审：
+
+```powershell
+.venv\Scripts\python -m scripts.package_delivery
+```
+
+生成文件位于 data/deliverables，保留提交历史，排除 .env、数据库、虚拟环境及运行资料。只提交 ZIP 即可让评审查看代码和 Git 历史，无需开放私有仓库。
+实际干净目录启动及定时联网生成验收结果见 [docs/VERIFICATION.md](docs/VERIFICATION.md)。

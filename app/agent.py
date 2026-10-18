@@ -4,6 +4,7 @@ from openai import AsyncOpenAI
 from .config import settings
 from .db import connect
 from .tools import Tools, SCHEMAS
+from .knowledge import archive_news
 
 async def run_agent(run_id, preference):
     try:
@@ -21,6 +22,7 @@ async def run_agent(run_id, preference):
             "Deduplicate events and respect exclusions. Cite source URLs and dates. "
             "Return a Chinese Markdown brief with 5-8 items when available; explain shortages. "
             "When news search fails or knowledge is missing, you may use search_knowledge, choosing the query yourself. "
+            "Search results are automatically archived. archived_news from search_knowledge is historical evidence, never assume it is current. "
             "Always try news search for daily news. Local knowledge is background, not today news. "
             "Separate 今日新闻 and 知识库背景补充. Cite each KB chunk as [KB-ID], include its source and publication date (unknown if absent). "
             "If neither source has relevant evidence, report insufficient evidence. UTC now: " + datetime.now(timezone.utc).isoformat()},
@@ -58,6 +60,12 @@ async def run_agent(run_id, preference):
                         result = await tools.execute(call.function.name, args)
                         if call.function.name == "search_news" and result:
                             search_succeeded = True
+                            try:
+                                archive = archive_news(result, run_id)
+                                if archive["skipped"]:
+                                    notices.append("部分搜索资料未入库（缺少正文/来源或容量已满）")
+                            except Exception:
+                                notices.append("新闻归档失败；本次搜索结果仍可使用")
                         if call.function.name == "search_news" and not result:
                             notices.append("部分新闻搜索未返回结果")
                         if call.function.name == "search_knowledge":

@@ -9,7 +9,7 @@
 <label>关键词<input name="keywords" maxlength="1000"></label>
 <label>排除词<input name="exclusions" maxlength="1000"></label>
 <button>保存偏好</button><button type="button" id="generate">立即生成</button></form><div id="status" role="status"></div></section>
-<section><h2>本地 RAG 知识库</h2><p>导入你自己的资料。检索采用中文双字与关键词匹配，无需额外模型或向量服务；结果仅作为背景资料。</p>
+<section><h2>本地 RAG 知识库</h2><p>搜索成功后会自动保存新闻摘要及来源，重复链接不会重复入库。也可导入你自己的资料。检索采用中文双字与关键词匹配，无需额外模型或向量服务；结果仅作为背景资料。</p>
 <form id="knowledge"><label>标题<input name="title" required maxlength="200"></label><label>来源（文件名或链接）<input name="source" required maxlength="500"></label><label>发布日期（可选）<input name="published_at" type="date"></label><label>正文<textarea name="content" required maxlength="50000" rows="6" style="width:95%"></textarea></label><br><button>导入知识库</button></form><div id="kbstatus" role="status"></div><div id="kbdocs"></div></section>
 <section><h2>历史任务</h2><div id="runs"></div></section>
 <section><h2>简报与工具调用</h2><pre id="detail">选择任务查看真实执行记录。</pre></section>
@@ -20,7 +20,7 @@ async function refresh(){const rows=await api('/runs');$('#runs').replaceChildre
 async function show(){const r=await api('/runs/'+selected);$('#detail').textContent=(r.brief||r.error||r.status)+'\n'+(r.notices||[]).join('\n')+'\n\n工具调用：\n'+r.tool_calls.map(t=>t.name+' '+t.arguments+'\n'+t.result).join('\n\n')}
 $('#preferences').onsubmit=async e=>{e.preventDefault();try{await api('/subscription',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});$('#status').textContent='已保存'}catch(e){$('#status').textContent=e.message}};
 $('#generate').onclick=async()=>{try{const r=await api('/runs',{method:'POST'});selected=r.id;$('#status').textContent='任务已创建';await refresh()}catch(e){$('#status').textContent=e.message}};
-async function loadKnowledge(){const docs=await api('/knowledge');$('#kbdocs').textContent=docs.map(d=>d.title+' · '+(d.published_at||'日期未知')).join('； ')}
+async function loadKnowledge(){const docs=await api('/knowledge');$('#kbdocs').textContent=docs.map(d=>(d.kind==='archived_news'?'[搜索归档] ':'[手动导入] ')+d.title+' · '+(d.published_at||'日期未知')).join('； ')}
 $('#knowledge').onsubmit=async e=>{e.preventDefault();try{const body=Object.fromEntries(new FormData(e.target));if(!body.published_at)body.published_at=null;await api('/knowledge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('#kbstatus').textContent='导入成功';e.target.reset();await loadKnowledge()}catch(e){$('#kbstatus').textContent=e.message}};
 loadKnowledge().catch(e=>$('#kbstatus').textContent=e.message);
 (async()=>{try{const p=await api('/subscription');if(p)for(const k of ['nickname','topics','keywords','exclusions'])$('#preferences').elements[k].value=p[k];await refresh()}catch(e){$('#status').textContent=e.message}})();setInterval(()=>refresh().catch(()=>{}),3000);

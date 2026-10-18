@@ -89,7 +89,7 @@ def import_knowledge(body: KnowledgeDocument):
 @app.get("/api/knowledge")
 def list_knowledge():
     with connect() as conn:
-        return [dict(row) for row in conn.execute("SELECT * FROM knowledge_documents ORDER BY id DESC")]
+        return [dict(row) for row in conn.execute("SELECT d.*, CASE WHEN a.document_id IS NULL THEN 'manual' ELSE 'archived_news' END AS kind, a.first_seen_at,a.last_seen_at FROM knowledge_documents d LEFT JOIN news_archive a ON a.document_id=d.id ORDER BY d.id DESC")]
 
 @app.get("/api/knowledge/search")
 def search_knowledge(q: str = ""):

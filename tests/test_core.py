@@ -61,7 +61,7 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
     async def execute(self, name, args):
         if name == "search_news":
             if mode != "news": raise ValueError("Search unavailable")
-            return [{"url":"https://example.com/news", "title":"AI"}]
+            return [{"url":"https://example.com/news", "title":"AI", "content":"AI agents use retrieval.", "published_date":"2026-10-18"}]
         return await original(self, name, args)
     monkeypatch.setattr(agent, "AsyncOpenAI", FakeClient)
     monkeypatch.setattr(Tools, "execute", execute)
@@ -104,3 +104,25 @@ def test_knowledge_api_retrieval_and_migration(tmp_path, monkeypatch):
         assert client.get("/api/knowledge/search", params={"q":""}).json() == []
         assert client.post("/api/knowledge", json={"title":"x", "source":"y", "content":" "}).status_code == 422
         assert len(client.get("/api/knowledge").json()) == 1
+
+
+def test_search_archive_deduplicates_and_is_retrievable(tmp_path, monkeypatch):
+    from app.db import initialize, connect
+    from app.knowledge import archive_news, retrieve
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    initialize()
+    with connect() as conn:
+        conn.execute("INSERT INTO runs(id,status,created_at) VALUES('archive','running','now')")
+    news = {"title":"Agent retrieval", "url":"https://example.com/news?utm_source=test#top", "content":"Agent retrieval tools background", "published_date":"2026-10-17"}
+    assert archive_news([news], "archive")["saved"] == 1
+    news["url"] = "https://example.com/news"
+    assert archive_news([news], "archive")["existing"] == 1
+    hit = retrieve("retrieval")[0]
+    assert hit["kind"] == "archived_news"
+    assert hit["published_at"] == "2026-10-17"
+    assert hit["source"] == "https://example.com/news"
+    assert hit["first_seen_at"] and hit["last_seen_at"]
+    assert archive_news([{"url":"file:///secret"}, {"title":"x", "url":"https://example.com/empty"}], "archive")["skipped"] == 2
+    initialize()
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM knowledge_documents").fetchone()[0] == 1

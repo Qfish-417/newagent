@@ -4,3 +4,12 @@ __pycache__/
 .pytest_cache/
 data/
 *.pyc
+
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log

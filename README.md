@@ -1,115 +1,131 @@
 # newagent · 每日 AI 新闻助手
 
-KUAFUAI Agent 开发实习题，选项 A。当前支持本地多浏览器身份与每日站内定时推送。
+KUAFUAI Agent 开发实习题，选项 A。Python + FastAPI + SQLite，使用 OpenAI Python SDK 实现手写 Function Calling 循环。LLM 自主选择工具、查询内容、调用次数及结束时机。
 
-模型通过 function calling 自主选择工具、追加检索并决定停止，页面可查看偏好、历史任务及工具调用记录。当前支持手动生成和每日站内定时推送；邮件、邮箱验证和结构化来源校验尚未实现，详见 [实施方案](docs/PLAN.md)。
+支持注册登录、按用户保存订阅与自定义提示词、每日站内定时推送、未读提醒、新闻卡片详情、后台 RAG 管理与搜索自动归档。方案与实施记录见 [docs/PLAN.md](docs/PLAN.md)。
 
-## 5 分钟启动（Python 3.11+）
+## Windows 一键启动
+
+环境：Windows 10/11，Windows PowerShell 5.1 或 PowerShell 7，**64 位 Python 3.11+**（本项目在 Python 3.13 验证），首次安装依赖需要联网。项目路径支持空格与中文。
+
+**只需要 DeepSeek API Key**，模型对话和官方搜索共用本机环境变量 `DEEPSEEK_API_KEY`。不需要 Tavily、Redis、MySQL 或 Docker。
+
+已配置该环境变量的用户，在仓库目录执行：
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
+.\start.cmd
+```
+
+也可双击 `start.cmd`。首次没有密钥会自动打开交互配置向导。脚本创建 `.venv`、安装依赖、生成本地 `.env`（不覆盖已有文件）、校验密钥并自动建表，随后启动单 worker 服务。
+打开 http://127.0.0.1:8000 ，注册账号，设置偏好、自定义提示词和每日时间。Ctrl+C 停止；每日调度需要服务保持运行。
+
+如果尚未配置密钥，可在 Windows“环境变量”中添加用户变量 `DEEPSEEK_API_KEY`，值填自己的密钥，然后重新打开终端。脚本也会尝试读取已持久化的用户/系统变量。**不要将密钥填写到示例文件或提交 Git。**
+
+可选启动参数：
+
+```powershell
+.\start.cmd -Port 8001
+.\start.cmd -CheckOnly
+# 已安装依赖时，仅检查配置和建表，不启动服务：
+.\start.cmd -SkipInstall -CheckOnly
+```
+
+首次拉取或修改 requirements.txt 后脚本安装依赖；其余启动复用环境。CheckOnly 会创建环境/本地配置并执行 migration，但不调用付费模型或搜索。
+
+## 交互配置并一键启动
+
+双击 `configure.cmd`，或执行：
+
+```powershell
+.\configure.cmd
+# 等价：
+.\start.cmd -Configure
+```
+
+同一个脚本先安装依赖，再进入配置向导：
+
+1. 提示 **只需要 DeepSeek API Key**，输入时隐藏；已有环境变量时可回车沿用。
+2. 询问是否填写可选项；选 N 直接使用默认值，选 Y 可设置模型、接口地址、数据目录、轮数及 Tavily Key。
+3. 保存为本地 UTF-8 `.env`，由应用加载为配置，自动建表并启动服务。
+
+不会修改 Windows 系统环境变量，也不会显示密钥。若已有同名系统环境变量，其优先级高于 `.env`，向导会明确提示；更新系统密钥需要在系统环境变量设置中处理。
+`start.cmd` 用于之后直接启动，`configure.cmd` 可随时重新配置并启动。可选值回车保留现有设置。
+
+## 配置格式
+
+推荐通过系统环境变量保存密钥。也支持仓库根目录的本地 `.env`：复制 `.env.example` 后按需填写。文件采用 **UTF-8，逐行 NAME=value**，不写 `export`、`$env:`、JSON 或中文引号。操作系统环境变量优先于 `.env`。
+
+| 变量 | 必填 | 默认/用途 |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | 是 | 本机密钥，模型与 DeepSeek 官方搜索共用 |
+| `DEEPSEEK_MODEL` | 否 | `deepseek-chat`，可按账号可用模型调整 |
+| `DEEPSEEK_BASE_URL` | 否 | `https://api.deepseek.com`，模型接口地址 |
+| `SEARCH_API_KEY` | 否 | Tavily 密钥；留空直接使用 DeepSeek 搜索 |
+| `DATA_DIR` | 否 | `data`，数据库、任务文件及本地备份目录 |
+| `MAX_ROUNDS` | 否 | `12`，单任务模型轮数上限 |
+
+DeepSeek 搜索请求固定发送至官方 `https://api.deepseek.com/v1/tools/search`；修改模型 BASE_URL 不会修改搜索地址。兼容 OPENAI_API_KEY/OPENAI_BASE_URL/MODEL，但默认推荐 DeepSeek 变量。
+模型与搜索可能计费，是否可用取决于密钥权限、余额及网络。
+
+## 其他系统手动启动
+
+Linux/macOS 使用 Python 3.11+，无需 PowerShell：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-Copy-Item .env.example .env
-# 编辑 .env：沿用本地 DEEPSEEK_API_KEY，可选填写 SEARCH_API_KEY（Tavily 备用搜索）
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cp .env.example .env
+# 通过系统环境或本地 .env 配置 DEEPSEEK_API_KEY
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-打开 http://127.0.0.1:8000 ，保存偏好后点击立即生成。接口文档：http://127.0.0.1:8000/docs 。首次启动自动执行 `migrations/001_initial.sql`。所有数据保存在 `data/`，不提交 Git。
+requirements.txt 是跨环境依赖范围；requirements.lock.txt 记录 Windows/Python 3.13 的验证版本，不保证适用于所有系统。
 
-未配置密钥时服务和页面仍可启动，生成任务会明确失败，不会伪造新闻。模型与搜索服务可能产生费用。
+## 数据库与账号
 
-## 工具与边界
+SQLite 自动创建，SQL 在 migrations/001_initial.sql 至 005_accounts.sql；启动执行幂等 migration，保留已有数据。无需手动建库。
+同一数据库通过 user_id 隔离用户订阅、提示词、任务和简报，无需每用户建库。
 
-- `list_dir` / `read_file` / `search_content` / `write_file`：限定当前任务工作目录。
-- `bash`：受限命令解释器，仅支持 `pwd`、`ls`、`cat FILE`、`wc FILE`，不执行通用 shell。
-- `search_news`：Tavily 新闻搜索，时间范围过去一天。
+用户名密码注册登录，随机盐 scrypt 密码哈希、30天服务端会话（数据库只存令牌摘要），Cookie 使用 HttpOnly、SameSite=Strict，HTTPS 下启用 Secure。连续8次登录失败限制该用户名15分钟。尚无邮箱验证、找回密码或双因素认证。
+注册迁移当前访客资料；登录已有账号合并访客历史并优先保留账号设置。提示词每次手动/定时生成读取，不进入共享 RAG。
 
-默认最大 12 轮模型请求；错误反馈给模型，超限后任务失败。网页内容作为不可信资料处理。首版无账户鉴权，仅用于本机演示；勿直接开放公网。工具记录可能包含偏好和检索内容。
+## 每日调度与阅读
 
-## 验证
+按用户设置的 HH:MM 和 IANA 时区每日执行（默认 Asia/Shanghai），UTC 存储下次执行时刻。修改后立即重算，页面显示下次时间和差值。已过当天时刻则排到明天。
+到点开始搜索生成，完成后站内标记未读；点击简报标记已读，页面3秒轮询。没有邮件或系统桌面通知。
+停机错过的计划启动后补执行一次，再恢复每日计划；执行中重启的任务标记失败。事务和唯一约束避免重复认领。只部署一个 worker。
 
-```powershell
-python -m pytest -q
-```
+## 工具与降级
 
-自动测试不调用付费模型；真实新闻生成需要有效的模型及搜索服务密钥。
+- list_dir、read_file、search_content、write_file：限任务工作目录。
+- bash：目前是受限命令解释器，仅支持 pwd/ls/cat/wc，**尚未实现通用 shell 执行**。
+- search_news：可选 Tavily 新闻搜索。
+- search_deepseek：DeepSeek 官方联网搜索，复用现有密钥。
+- search_knowledge：本地分块词项检索（中文双字/英文词项加权），不依赖 embedding 服务。
 
-## DeepSeek 配置
-
-默认使用 `deepseek-chat` 和 `https://api.deepseek.com`，直接读取本地环境变量 `DEEPSEEK_API_KEY`，无需复制密钥。
-可通过 `DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL` 覆盖。兼容 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL`，DeepSeek 变量优先。
-`.env` 不提交 Git。新闻检索默认可直接使用现有 DeepSeek 密钥；`SEARCH_API_KEY` 仅用于可选 Tavily 搜索。
-
-## V0.2 本地 RAG 降级
-
-知识库仅通过本机后台命令管理，不在用户页面展示或导入。
-模型可调用 `search_knowledge(query)` 检索相关片段，在新闻来源失败或背景不足时补充资料。
-检索采用中文双字与英文词项加权匹配，不依赖额外 embedding API；同义词召回能力有限。
-资料分块保存在 SQLite（`data/news.db`），无需额外服务。
-
-使用知识库或检索过程出现降级时，任务标记 `partial`。程序附加知识库引用及日期；只有知识库命中时明确提示“非今日新闻”。两种来源均无证据则失败。
-当前只检查检索是否有命中，尚未完整验证模型每条陈述与引用的一致性，不能保证新闻真实性。
-
-资料只供本地单用户使用。被检索命中的片段会发给所配置的 DeepSeek 服务用于生成内容，请只导入适合发送给该服务的资料。
-新闻搜索仍可选配 Tavily；没有搜索密钥时，Agent 可以尝试知识库降级，不会自动创建虚假新闻或示例资料。
-
-## 新闻搜索自动归档（2026-10-18）
-- search_news 成功返回的标题、正文摘要、来源 URL、服务提供的发布时间自动入 RAG；保存首次和最近检索时间。
-- URL 去除 fragment、utm_*、fbclid、gclid，唯一约束及事务避免重复归档；重复命中更新最近检索时间，保留原始资料。
-- 不保存模型生成的摘要作为新闻证据；缺少正文/有效来源的结果跳过，发布时间缺失保留未知。
-- 后台记录区分手动导入和搜索归档；RAG 返回 archived_news 类型及检索日期，始终作为历史背景使用。
-- 归档失败不会抹掉可用搜索结果；跳过或失败会写入降级说明。仍受 200 文档上限约束，达到上限不自动删除旧资料。
-- 8 项自动测试通过，包含重复链接、日期保留、历史资料召回、无效资料跳过。未进行真实搜索 API 调用。
-
-## 官方新闻示例资料
-运行 python -m scripts.seed_knowledge 导入 examples/knowledge_seed.json 中的三篇官方公告摘要（DeepSeek V3.2、Claude 4、MCP）。重复运行跳过已存在的同标题同来源资料。保留原始发布日期，仅用于历史背景检索，并非今日新闻。
+工具定义与执行位于 app/tools.py。Tavily 未配置不向模型提供该工具；搜索异常本任务停用该服务，由模型选择剩余工具。
+只有两个搜索服务都不可用或无结果才允许 RAG；任一搜索取得结果就不进行知识库降级。仅实际使用知识库时显示补充提示和历史资料引用。
+搜索证据自动入库，按规范化 URL 去重，保存来源与日期；搜索日期可能是索引日期，完整新闻时效和逐句引用校验尚未完成。
 
 ## 后台知识库管理
 
-用户页面不提供知识库列表、正文浏览及导入入口，原 `/api/knowledge` 路由已移除。
-任务详情只显示工具名称，原始检索资料仍保留在本地数据库用于后台排查。
+用户页面及公共 API 不提供知识库浏览和导入。后台命令：
 
 ```powershell
-python -m scripts.manage_knowledge list
-python -m scripts.manage_knowledge import examples/knowledge_seed.json
-python -m scripts.manage_knowledge show 1
-python -m scripts.manage_knowledge search Agent
+.venv\Scripts\python -m scripts.manage_knowledge list
+.venv\Scripts\python -m scripts.manage_knowledge import examples/knowledge_seed.json
+.venv\Scripts\python -m scripts.manage_knowledge show 1
+.venv\Scripts\python -m scripts.manage_knowledge search Agent
 ```
 
-导入文件为 JSON 数组，字段参考 examples/knowledge_seed.json。已有知识库与自动搜索归档继续工作，简报保留来源引用。
+示例文件为三篇带官方来源和发布日期的历史摘要，不会启动时自动导入。共享 RAG 仅存后台资料与公开新闻，检索命中片段会发送给 DeepSeek 用于生成。
 
-## 扩充工具与搜索切换
+## 验证与提交
 
-框架为 FastAPI + OpenAI Python SDK，Agent Loop 为手写 function calling，不依赖 LangChain/LangGraph。
-扩充工具时，在 app/tools.py 的 SCHEMAS 添加名称、参数和说明，并在 Tools.execute 实现对应处理；循环自动把工具暴露给模型。
-`search_deepseek(query)` 已注册，使用本机 DEEPSEEK_API_KEY 请求官方 Search API。
-未配置 Tavily 时不向模型提供 search_news；已配置的搜索服务调用异常后在当前任务停用，错误与切换建议回传模型，由模型重新选择其他搜索或知识库工具。空结果允许调整查询，不直接停用。
-两个搜索工具的结果都自动归档 RAG。搜索服务提供的日期可能是索引时间，模型仍需核实新闻日期。
+```powershell
+.venv\Scripts\python -m pytest -q
+```
 
-## 用户隔离与每日调度
-
-同一个 SQLite 数据库存储多个用户：users、user_subscriptions、run_owners 以 user_id 关联。用户由长期 HttpOnly Cookie 标识；同一浏览器保留身份，不同浏览器隔离订阅与简报。支持用户名密码注册登录；未注册访客清除 Cookie 会失去原身份入口。升级后第一个本地访问者一次性继承旧单用户资料。
-
-页面设置每日 HH:MM、IANA 时区（默认 Asia/Shanghai）并启用定时。后端用 UTC 存储下一执行时刻，启动读取数据库与当前时间计算等待时间；修改后即时唤醒重算。保存时间已过则安排明天；保存时间恰好等于当前分钟亦按下一天计算。关闭定时取消未来计划，已执行中的任务仍完成。
-
-到时自动检索生成，站内显示未读，点击该简报标记已读。页面每 3 秒检查，未开页面时结果仍保留，下次打开可查看；不发送桌面系统通知。时间表示开始生成的时间，完成后才投递，生成耗时会使收到时间稍晚。
-
-服务必须运行才能按时执行。停机错过的计划启动后最多补执行一次，然后安排下一天。数据库事务与 (user_id, scheduled_for) 唯一约束防止重复调度；执行中重启的任务标记失败，不盲目重发。每日时间修改为新时刻允许当天再次调度。
-
-当前部署使用一个 Uvicorn worker；尚无跨进程任务恢复/租约，不以多 worker 方式启动。RAG 为后台维护的共享公开新闻资料，不将用户订阅作为共享知识入库。
-
-## 注册登录与自定义提示词
-
-页面可注册用户名（3-40位字母、数字、点、下划线或连字符）及密码（8-128位），用户名不区分大小写。
-注册时迁移当前访客的订阅、每日定时、自定义提示词和历史简报；登录已有账号时合并访客历史，优先保留已有账号的订阅与提示词，访客定时随迁移取消以避免重复执行。
-账号的每日调度与浏览器会话独立，退出登录仍继续按账号计划生成。
-
-密码使用随机盐 scrypt 哈希，服务端仅存会话令牌 SHA-256 摘要，Cookie 为 HttpOnly、SameSite=Strict，HTTPS 下自动 Secure。会话30天有效，退出撤销当前会话。
-连续8次密码错误限制该用户名15分钟。尚未提供找回密码、邮箱验证及双因素认证；公网部署需 HTTPS。
-
-自定义提示词按用户持久化，每次手动/定时生成均读取并写入该任务偏好快照，再由模型使用；不会存入共享 RAG。来源核实与工具限制仍由系统规则约束。
-
-## RAG 降级门槛（当前规则）
-
-只有 Tavily 与 DeepSeek 两个搜索工具都未取得结果（失败、未配置或返回空列表），才允许 RAG 检索。未尝试的可用搜索必须先尝试；任一搜索返回结果后，本轮禁止 RAG 补充。该门槛由执行器强制检查，不只依赖提示词。未配置 Tavily 不阻塞 DeepSeek，但不伪装成已调用 Tavily。
+自动测试不调用付费服务。覆盖工具隔离、模型工具循环、双搜索/RAG门槛、新闻归档、账号隔离与迁移、定时与未读。
+Git 保留各阶段提交历史。`.env`、`.env.*`（除示例）、data/、数据库、日志和虚拟环境均被忽略。提交代码与 SQL，不提交 API Key、账号数据、Cookie、任务资料或备份。

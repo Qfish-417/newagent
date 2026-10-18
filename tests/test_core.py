@@ -126,3 +126,14 @@ def test_search_archive_deduplicates_and_is_retrievable(tmp_path, monkeypatch):
     initialize()
     with connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM knowledge_documents").fetchone()[0] == 1
+
+
+def test_knowledge_detail_restores_overlapping_chunks(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    content = "知识库资料详情" * 300
+    with TestClient(app) as client:
+        result = client.post("/api/knowledge", json={"title":"长文", "source":"notes", "content":content})
+        detail = client.get("/api/knowledge/" + str(result.json()["id"]))
+        assert detail.status_code == 200
+        assert detail.json()["content"] == content
+        assert client.get("/api/knowledge/99999").status_code == 404

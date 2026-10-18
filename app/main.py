@@ -96,3 +96,15 @@ def search_knowledge(q: str = ""):
     if len(q) > 500:
         raise HTTPException(422, "Query too long")
     return retrieve(q)
+
+
+@app.get("/api/knowledge/{document_id}")
+def get_knowledge(document_id: int):
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM knowledge_documents WHERE id=?", (document_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Document not found")
+        chunks = conn.execute("SELECT content FROM knowledge_chunks WHERE document_id=? ORDER BY position", (document_id,)).fetchall()
+    # Chunks overlap by 150 characters: restore original content without repetition.
+    content = "" if not chunks else chunks[0][0] + "".join(c[0][150:] for c in chunks[1:])
+    return {**dict(row), "content": content}

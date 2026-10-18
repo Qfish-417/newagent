@@ -71,7 +71,7 @@ def test_model_drives_tool_order_and_stops(tmp_path, monkeypatch, mode):
         assert row[0] == {"news":"succeeded", "rag":"partial", "empty":"failed"}[mode]
         if mode == "rag":
             assert "KB-" in row[1] and "my-notes.md" in row[1] and "2026-01-01" in row[1]
-            assert "未获取到实时新闻" in row[1]
+            assert "非实时新闻" in row[1]
         assert [r[0] for r in conn.execute("SELECT name FROM tool_calls ORDER BY id")] == ["search_news", "list_dir" if mode == "news" else "search_knowledge"]
     assert len(seen) == 3
     assert seen[1][-1]["role"] == "tool"
